@@ -1,39 +1,60 @@
-const express = require('express');
-const axios = require('axios');
-const FormData = require('form-data');
+const express = require("express");
+const axios = require("axios");
+const FormData = require("form-data");
+const fs = require("fs");
+const https = require("https");
+const { Telegraf } = require("telegraf");
+
+const bot = new Telegraf("7704392957:AAE0-vIrLNMxAk5bS725eSglcSFBCedLWrk");
 const app = express();
 app.use(express.json());
 
-const TELEGRAM_TOKEN = '7704392957:AAE0-vIrLNMxAk5bS725eSglcSFBCedLWrk';
-const HOST_UPLOAD_URL = 'https://kala4me.ir/wp-json/telegram/v1/upload'; // آدرس API روی هاست داخلی
+bot.start((ctx) => {
+  ctx.reply("سلام! لطفاً فایل خود را بفرستید.");
+});
 
-app.post('/upload', async (req, res) => {
+bot.on("document", async (ctx) => {
+  const fileId = ctx.message.document.file_id;
+  const fileName = ctx.message.document.file_name;
+  const chatId = ctx.chat.id;
+
   try {
-    const { file_id, file_name } = req.body;
+    const fileInfo = await ctx.telegram.getFile(fileId);
+    const fileUrl = `https://api.telegram.org/file/bot${bot.token}/${fileInfo.file_path}`;
 
-    // مرحله 1: گرفتن file_path از تلگرام
-    const fileInfo = await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getFile?file_id=${file_id}`);
-    const filePath = fileInfo.data.result.file_path;
-    const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`;
+    ctx.reply("✅ در حال آپلود فایل روی سرور...");
 
-    // مرحله 2: دانلود فایل از تلگرام
-    const fileResponse = await axios.get(fileUrl, { responseType: 'stream' });
-
-    // مرحله 3: ارسال به هاست داخلی
-    const form = new FormData();
-    form.append('file', fileResponse.data, file_name);
-
-    const uploadResponse = await axios.post(HOST_UPLOAD_URL, form, {
-      headers: form.getHeaders(),
+    const file = await axios.get(fileUrl, {
+      responseType: "stream",
     });
 
-    res.json({ success: true, data: uploadResponse.data });
+    const form = new FormData();
+    form.append("file", file.data, fileName);
+
+    const uploadRes = await axios.post(
+      "https://kala4me.ir/wp-content/BOT/upload.php",
+      form,
+      { headers: form.getHeaders() }
+    );
+
+    if (uploadRes.data && uploadRes.data.url) {
+      ctx.reply(`✅ فایل آپلود شد: ${uploadRes.data.url}`);
+    } else {
+      ctx.reply("❌ خطا در آپلود فایل روی هاست.");
+    }
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ success: false, error: err.message });
+    console.error(err);
+    ctx.reply("❌ خطا در دریافت یا آپلود فایل.");
   }
 });
 
-app.listen(3000, () => {
-  console.log('Server running on port 3000');
+bot.launch();
+
+app.get("/", (req, res) => {
+  res.send("Bot is running.");
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Bot server running on port ${PORT}`);
 });
